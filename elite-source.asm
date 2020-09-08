@@ -845,7 +845,7 @@ ORG &0000
                         \   1   = Title screen
                         \         Buy Cargo screen (red key f1)
                         \         Data on System screen (red key f6)
-                        \         Get commander name ("@", save/load commander)
+                        \         Get commander name ("", save/load commander)
                         \         In-system jump just arrived ("J")
                         \         Mis-jump just arrived (witchspace)
                         \   4   = Sell Cargo screen (red key f2)
@@ -8060,6 +8060,264 @@ NEXT
 \
 \ ******************************************************************************
 
+IF BLITTER
+
+DMAC_BLITCON_offs		=	0
+DMAC_FUNCGEN_offs		=	$1
+DMAC_WIDTH_offs			=	$2
+DMAC_HEIGHT_offs		=	$3
+DMAC_SHIFT_offs			=	$4
+DMAC_MASK_FIRST_offs		=	$5
+DMAC_MASK_LAST_offs		=	$6
+DMAC_DATA_A_offs		=	$7
+DMAC_ADDR_A_offs		=	$8
+DMAC_DATA_B_offs		=	$B
+DMAC_ADDR_B_offs		=	$C
+DMAC_ADDR_C_offs		=	$F
+DMAC_ADDR_D_offs		=	$12
+DMAC_ADDR_E_offs		=	$15
+DMAC_STRIDE_A_offs		=	$18
+DMAC_STRIDE_B_offs		=	$1A
+DMAC_STRIDE_C_offs		=	$1C
+DMAC_STRIDE_D_offs		=	$1E
+
+DMAC_BLIT_EXT_offs		=	$40
+DMAC_ADDR_D_MIN_offs		=	DMAC_BLIT_EXT_offs
+DMAC_ADDR_D_MAX_offs		=	DMAC_BLIT_EXT_offs+3
+
+jim_DMAC			=	&FD60
+jim_DMAC_BLITCON		=	jim_DMAC + DMAC_BLITCON_offs
+jim_DMAC_FUNCGEN		=	jim_DMAC + DMAC_FUNCGEN_offs
+jim_DMAC_WIDTH			=	jim_DMAC + DMAC_WIDTH_offs
+jim_DMAC_HEIGHT			=	jim_DMAC + DMAC_HEIGHT_offs
+jim_DMAC_SHIFT			=	jim_DMAC + DMAC_SHIFT_offs
+jim_DMAC_MASK_FIRST		=	jim_DMAC + DMAC_MASK_FIRST_offs
+jim_DMAC_MASK_LAST		=	jim_DMAC + DMAC_MASK_LAST_offs
+jim_DMAC_DATA_A			=	jim_DMAC + DMAC_DATA_A_offs
+jim_DMAC_ADDR_A			=	jim_DMAC + DMAC_ADDR_A_offs
+jim_DMAC_DATA_B			=	jim_DMAC + DMAC_DATA_B_offs
+jim_DMAC_ADDR_B			=	jim_DMAC + DMAC_ADDR_B_offs
+jim_DMAC_ADDR_C			=	jim_DMAC + DMAC_ADDR_C_offs
+jim_DMAC_ADDR_D			=	jim_DMAC + DMAC_ADDR_D_offs
+jim_DMAC_ADDR_E			=	jim_DMAC + DMAC_ADDR_E_offs
+jim_DMAC_STRIDE_A		=	jim_DMAC + DMAC_STRIDE_A_offs
+jim_DMAC_STRIDE_B		=	jim_DMAC + DMAC_STRIDE_B_offs
+jim_DMAC_STRIDE_C		=	jim_DMAC + DMAC_STRIDE_C_offs
+jim_DMAC_STRIDE_D		=	jim_DMAC + DMAC_STRIDE_D_offs
+jim_DMAC_ADDR_D_MIN		=	jim_DMAC + DMAC_ADDR_D_MIN_offs
+jim_DMAC_ADDR_D_MAX		=	jim_DMAC + DMAC_ADDR_D_MAX_offs
+
+BLITCON_ACT_ACT			=	$80		; always set when setting act constants/execing  
+BLITCON_ACT_CELL		=	$40		; cell addressing used i.e. move one byte left adds 8 to address
+							; moving one line down either adds 1 byte or STRIDE depending on whether 
+							; line crosses an 8 line boundary
+BLITCON_ACT_MODE_1BBP		=	$00		; 1 bit per pixel mapping 2 colours
+BLITCON_ACT_MODE_2BBP		=	$10		; 2 bit per pixel mapping 4 colours
+BLITCON_ACT_MODE_4BBP		=	$20		; 4 bit per pixel mapping 16 colours
+BLITCON_ACT_MODE_8BBP		=	$30		; 8 bit per pixel mapping 256 colours
+BLITCON_ACT_LINE		=	$08		; draw a line
+BLITCON_ACT_COLLISION		=	$04		; gets reset for any non-zero D data (even in EXEC_D is clear)
+BLITCON_ACT_WRAP		=	$02		; wrap C/D addresses to fit between min/max
+
+BLITCON_LINE_MAJOR_UPnRIGHT	=	$10		; line draw major axis is up
+BLITCON_LINE_MINOR_CCW		=	$20		; minor axis is CCW to MAJOR i.e.:
+							;  - left when maj up, up when maj right
+							;  - otherwise, right when maj up, down when maj right
+
+BLITCON_EXEC_A			=	$01
+BLITCON_EXEC_B			=	$02
+BLITCON_EXEC_C			=	$04
+BLITCON_EXEC_D			=	$08
+BLITCON_EXEC_E			=	$10
+
+
+
+DMIN=	jim_DMAC_STRIDE_A+1
+DMAJ=	jim_DMAC_ADDR_B+2
+
+
+	SKIP &87
+.LL30
+.LOIN
+{
+	STY	YSAV
+
+;.lll	lda	jim_DMAC_BLITCON
+;	bmi	lll
+
+
+		; find deltaX
+		sec
+		lda	X1
+		sbc	X2
+		php
+		ror	SWAP	; save sign of X1-X2
+		plp
+		bcs	s1
+		eor	#$FF
+		adc	#1	
+.s1		sta	P	; magnitude P=DX
+
+		; find deltaY
+		sec
+		lda	Y1
+		sbc	Y2
+		php
+		ror	SWAP	; save sign of Y1-Y2
+		plp
+		bcs	s2
+		eor	#$FF
+		adc	#1
+.s2		sta	Q	; magnitude Q=DY
+
+		; compare P/Q
+		sec
+		sbc	P
+		bcs	s3
+
+		; X is major axis
+		lda	Q
+		sta	DMIN
+		lda	P
+		sta	DMAJ
+
+		lda	#BLITCON_ACT_ACT + BLITCON_ACT_CELL + BLITCON_ACT_LINE
+
+		; get X/Y coordinates
+		; get rightmost coordinate
+		; check sign of sub in SWAP
+		bit	SWAP
+		bvs	swap1
+		ldx	X1
+		ldy	Y1
+		bit	SWAP
+		bpl	noccw3
+		ora	#BLITCON_LINE_MINOR_CCW		; we're going RIGHT and UP
+.noccw3		jmp	s4
+
+
+.swap1		ldx	X2
+		ldy	Y2
+		bit	SWAP
+		bmi	noccw4
+		ora	#BLITCON_LINE_MINOR_CCW		; we're going RIGHT and UP
+.noccw4		jmp	s4
+
+.s3	
+		; Y is major axis
+		lda	P
+		sta	DMIN
+		lda	Q
+		sta	DMAJ
+
+		lda	#BLITCON_ACT_ACT + BLITCON_ACT_CELL + BLITCON_ACT_LINE + BLITCON_LINE_MAJOR_UPnRIGHT	; we're going UP
+
+		; get X/Y coordinates
+		; get bottom-most coordinate
+		; check sign of sub in SWAP
+		bit	SWAP
+		bpl	swap2
+		ldx	X1
+		ldy	Y1
+
+		bvc	noccw1
+		ora	#BLITCON_LINE_MINOR_CCW		; we're going UP and LEFT
+.noccw1	jmp	s4
+
+.swap2		ldx	X2
+		ldy	Y2
+		bvs	noccw2
+		ora	#BLITCON_LINE_MINOR_CCW		; we're going UP and LEFT
+.noccw2	jmp	s4
+.s4
+		pha		; save the BLTCON value for later
+
+		jsr	calcSCRADDR
+		; mask value
+		sta	jim_DMAC_DATA_A	; set pixel mask
+
+		; set screen address start point
+		lda	#$FF
+		sta	jim_DMAC_ADDR_C
+		sta	jim_DMAC_ADDR_D
+
+		lda	jim_DMAC_ADDR_C+2
+		sta	jim_DMAC_ADDR_D+2
+		lda	jim_DMAC_ADDR_C+1
+		sta	jim_DMAC_ADDR_D+1
+
+
+		; set colour to white
+		lda	#$FF
+		sta	jim_DMAC_DATA_B
+
+		; set function generator to set B masked by A XOR C masked by not A
+		lda	#$4A				
+		sta	jim_DMAC_FUNCGEN
+
+		lda	#BLITCON_EXEC_C + BLITCON_EXEC_D
+		sta	jim_DMAC_BLITCON
+
+		; set major / error acc /minor
+		lda	#0
+		sta	jim_DMAC_ADDR_B+1
+		sta	jim_DMAC_ADDR_A+1
+		sta	jim_DMAC_STRIDE_A
+		sta	jim_DMAC_WIDTH
+		
+		lda	DMAJ
+		sta	jim_DMAC_WIDTH+1
+		lsr	A
+		sta	jim_DMAC_ADDR_A+2
+			
+
+		; set stride
+		lda	#>256
+		sta	jim_DMAC_STRIDE_C
+		sta	jim_DMAC_STRIDE_D
+		lda	#<256
+		sta	jim_DMAC_STRIDE_C+1
+		sta	jim_DMAC_STRIDE_D+1
+
+		; execute!
+		pla
+		sta	jim_DMAC_BLITCON
+
+	LDX	#0
+	STX	SWAP	; we've not swapped X1/X2 etc
+	LDY 	YSAV
+.^HL6
+	RTS
+.calcSCRADDR
+		; screen addr = 6000 + ((Y AND F8) >> 3) * 256 + (Y AND 7) + 8*((X AND F8) >> 3)
+
+ 		tya
+ 		LSR A                  
+ 		LSR A
+ 		LSR A
+
+ 		ora 	#&60              
+              	sta	jim_DMAC_ADDR_C+1	; store page
+              	      
+              	tya
+		and	#7
+ 		sta	jim_DMAC_ADDR_C+2
+
+ 		txa
+ 		and	#&F8
+ 		ora	jim_DMAC_ADDR_C+2
+ 		sta	jim_DMAC_ADDR_C+2
+
+ 		txa
+ 		and	#&07
+ 		tax
+ 		lda	TWOS,X
+
+		rts
+
+ELSE
+
+
 .LL30
 .LOIN
 {
@@ -8415,6 +8673,7 @@ NEXT
 
  RTS                    \ Return from the subroutine
 
+
 \ ******************************************************************************
 \
 \ Subroutine: LL30, LOIN (Part 5 of 7)
@@ -8715,6 +8974,7 @@ NEXT
 .^HL6
 
  RTS                    \ Return from the subroutine
+ENDIF		\BLITTER
 }
 
 \ ******************************************************************************
@@ -15771,6 +16031,21 @@ NEXT
 \
 \ ******************************************************************************
 
+IF BLITTER
+.BLITTERON
+	LDX	#$FF
+	TXS
+	\ turn on blitter hardware
+	LDA	#$D1
+	STA	&EE
+	STA	&FCFF
+	LDA	#&FC
+	STA	&FCFE
+	LDA	#&FE
+	STA	&FCFD
+	JMP	BLIT_TT170
+	SKIP	&1
+ELSE
 {
  LDX Q
  BEQ MU1
@@ -15790,6 +16065,7 @@ NEXT
  BNE MUL6
  RTS
 }
+ENDIF
 
 \ ******************************************************************************
 \
@@ -30538,7 +30814,7 @@ LOAD_F% = LOAD% + P% - CODE%
 \ Subroutine: TT102
 \ Category: Keyboard
 \
-\ Process function key presses, plus "@" (save commander), "H" (hyperspace),
+\ Process function key presses, plus "" (save commander), "H" (hyperspace),
 \ "D" (show distance to system) and "O" (move chart cursor back to current
 \ system). We can also pass cursor position deltas in X and Y to indicate that
 \ the cursor keys or joystick have been used (i.e. the values that are returned
@@ -30594,7 +30870,7 @@ LOAD_F% = LOAD% + P% - CODE%
 
  BIT QQ12               \ If bit 7 of QQ12 is clear (i.e. we are not docked, but
  BPL INSP               \ in space), jump to INSP to skip the following checks
-                        \ for f1-f3 and "@" (save commander file) keypresses
+                        \ for f1-f3 and "" (save commander file) keypresses
 
  CMP #f3                \ If red key f3 was pressed, jump to EQSHP to show the
  BNE P%+5               \ Equip Ship screen, returning from the subroutine using
@@ -30604,7 +30880,7 @@ LOAD_F% = LOAD% + P% - CODE%
  BNE P%+5               \ Buy Cargo screen, returning from the subroutine using
  JMP TT219              \ a tail call
 
- CMP #&47               \ If "@" was pressed, jump to SVE to save the commander
+ CMP #&47               \ If "" was pressed, jump to SVE to save the commander
  BNE P%+5               \ file, returning from the subroutine using a tail call
  JMP SVE
 
@@ -31314,12 +31590,17 @@ LOAD_F% = LOAD% + P% - CODE%
 
 .TT170
 {
+IF BLITTER
+	JMP BLITTERON
+.^BLIT_TT170
+ELSE
  LDX #&FF               \ Set stack pointer to &01FF, as stack is in page 1
  TXS                    \ (this is the standard location for the 6502 stack,
                         \ so this instruction effectively resets the stack).
                         \ We need to do this because the loader code in
                         \ elite-loader.asm pushes code onto the stack, and this
                         \ effectively removes that code so we start afresh
+ENDIF
 
 .^BR1
 
@@ -39554,3 +39835,7 @@ SAVE "output/PYTHON.bin", CODE_PYTHON%, P%, LOAD%
 
 PRINT "ELITE game code ", ~(&6000-P%), " bytes free"
 PRINT "Ends at ", ~P%
+\
+\IF P%>&6000
+\	ERROR "OUT OF SPACE", ~P%
+\ENDIF

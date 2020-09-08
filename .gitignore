@@ -26,3 +26,5 @@ compile.txt
 elite-beebasm.code-workspace
 run.bat
 elite-header.h.asm
+elite.sublime-project
+elite.sublime-workspace
